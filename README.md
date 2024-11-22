@@ -26,7 +26,7 @@ DisplayApp is a .NET application designed to simplify the process of managing di
 ## Building the Project
 1. Clone the repository:
    ```
-   git clone https://github.com/your-repo/DisplayApp.git
+   git clone https://github.com/nenning/DisplayApp.git
    ```
 2. Open the solution file in Visual Studio.
 3. Build the project using the Release configuration.
