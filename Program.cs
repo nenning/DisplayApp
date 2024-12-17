@@ -1,4 +1,5 @@
-﻿using System.Runtime.InteropServices;
+﻿using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 /* Top-left of main screen is always (0,0)
 
@@ -166,6 +167,30 @@ class Program
 
         bool laptopOnLeft = args[0] == "-l";
         ConfigureDisplays(laptopOnLeft);
+        ExtendDisplays();
+    }
+    private static void ExtendDisplays()
+    {
+        try
+        {
+            // hacky way to extend the display. good enough for the current purpose.
+            Process process = new()
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "DisplaySwitch.exe",
+                    Arguments = "/extend",         
+                    UseShellExecute = false,       
+                    CreateNoWindow = true          
+                }
+            };
+            process.Start();
+            process.WaitForExit();            
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to extend the display: {ex.Message}");
+        }
     }
 
     private static void ConfigureDisplays(bool laptopOnLeft)
