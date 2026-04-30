@@ -56,9 +56,6 @@ class Program
         Remote = 0x4000000,
         Disconnect = 0x2000000
     }
-    [DllImport("user32.dll", CharSet = CharSet.Ansi)]
-    public static extern bool EnumDisplaySettingsEx(string lpszDeviceName, int iModeNum, ref DEVMODE lpDevMode, uint dwFlags);
-
     private static List<DEVMODE> GetConnectedDisplays()
     {
         var displays = new List<DEVMODE>();
@@ -179,13 +176,13 @@ class Program
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = "DisplaySwitch.exe",
-                    Arguments = "/extend",         
-                    UseShellExecute = false,       
-                    CreateNoWindow = true          
+                    Arguments = "/extend",
+                    UseShellExecute = false,
+                    CreateNoWindow = true
                 }
             };
             process.Start();
-            process.WaitForExit();            
+            process.WaitForExit();
         }
         catch (Exception ex)
         {
@@ -193,10 +190,27 @@ class Program
         }
     }
 
+    private static List<DEVMODE> GetConnectedDisplaysWithRetry(int requiredCount, int maxAttempts = 10, int delayMs = 500)
+    {
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            var displays = GetConnectedDisplays();
+            if (displays.Count >= requiredCount)
+                return displays;
+
+            if (attempt < maxAttempts)
+            {
+                Console.WriteLine($"Only {displays.Count} display(s) found, waiting for display enumeration... ({attempt}/{maxAttempts})");
+                Thread.Sleep(delayMs);
+            }
+        }
+        return GetConnectedDisplays();
+    }
+
     private static void ConfigureDisplays(bool laptopOnLeft)
     {
         // Get all connected displays and their resolutions
-        var displays = GetConnectedDisplays();
+        var displays = GetConnectedDisplaysWithRetry(requiredCount: 2);
         if (displays.Count < 2)
         {
             Console.WriteLine("At least two displays are required.");
@@ -233,7 +247,7 @@ class Program
     private static void SetPrimaryDisplay(DEVMODE display)
     {
         // Set the display as the primary display
-        display.dmFields |= DEVMODE.DM_POSITION | DEVMODE.DM_DISPLAYFLAGS; ;
+        display.dmFields |= DEVMODE.DM_POSITION;
         display.dmPositionX = 0;
         display.dmPositionY = 0;
 

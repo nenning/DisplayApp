@@ -55,8 +55,14 @@ dotnet publish -c Release -r win-x64 --self-contained
 - `DISPLAY_DEVICE`: Windows structure for display device enumeration
 - `DEVMODE`: Windows structure containing display settings (resolution, position, flags)
 
+## Implementation Notes
+
+- **Laptop display detection**: the laptop is assumed to be the smallest display (by pixel area) that is not also the largest. This breaks if all displays are the same resolution.
+- **Deferred apply pattern**: `SetPrimaryDisplay` and `ApplyDisplaySettings` both pass `CDS_NORESET` to stage changes without applying them. The final `ChangeDisplaySettingsEx(null, IntPtr.Zero, ...)` call commits everything atomically.
+- **`ChangeDisplaySettingsEx` overload**: a second P/Invoke signature with `IntPtr lpDevMode` (instead of `ref DEVMODE`) is needed for the null-device commit call — passing `null` through `ref DEVMODE` is not valid.
+
 ## Platform Requirements
 
 - Windows-only (uses Windows API)
-- .NET 9.0 runtime
+- .NET 10.0 runtime
 - Requires at least 2 active displays to function
