@@ -89,7 +89,7 @@ class Program
     {
 
         public const int DM_POSITION = 0x20;
-        public const int DM_DISPLAYFLAGS = 0x2000000;
+        public const int DM_DISPLAYFLAGS = 0x200000;
         public const int DM_PELSWIDTH = 0x80000;
         public const int DM_PELSHEIGHT = 0x100000;
 
@@ -166,8 +166,8 @@ class Program
         }
 
         bool laptopOnLeft = args[0] == "-l";
-        ConfigureDisplays(laptopOnLeft);
         ExtendDisplays();
+        ConfigureDisplays(laptopOnLeft);
     }
     private static void ExtendDisplays()
     {
@@ -204,24 +204,26 @@ class Program
         }
 
         var largestDisplay = displays.OrderByDescending(d => d.dmPelsWidth * d.dmPelsHeight).First();
-        var smallestDisplay = displays.First(d => d.dmDeviceName != largestDisplay.dmDeviceName);
+        var laptopDisplay = displays
+            .OrderBy(d => d.dmPelsWidth * d.dmPelsHeight)
+            .First(d => d.dmDeviceName != largestDisplay.dmDeviceName);
 
         // Position the displays
         largestDisplay.dmPositionX = 0;
         largestDisplay.dmPositionY = 0;
-        smallestDisplay.dmPositionY = (int)largestDisplay.dmPelsHeight - (int)smallestDisplay.dmPelsHeight; // Bottom of large display
+        laptopDisplay.dmPositionY = (int)largestDisplay.dmPelsHeight - (int)laptopDisplay.dmPelsHeight; // Bottom-align
 
         if (laptopOnLeft)
         {
-            smallestDisplay.dmPositionX = -(int)smallestDisplay.dmPelsWidth;
+            laptopDisplay.dmPositionX = -(int)laptopDisplay.dmPelsWidth;
         }
         else
         {
-            smallestDisplay.dmPositionX = (int)largestDisplay.dmPelsWidth;
+            laptopDisplay.dmPositionX = (int)largestDisplay.dmPelsWidth;
         }
 
         SetPrimaryDisplay(largestDisplay);
-        ApplyDisplaySettings(smallestDisplay);
+        ApplyDisplaySettings(laptopDisplay);
         ChangeDisplaySettingsEx(null, IntPtr.Zero, (IntPtr)null, 0, (IntPtr)null);
         Console.WriteLine("Display configuration updated successfully.");
     }
@@ -252,7 +254,7 @@ class Program
     private static void ApplyDisplaySettings(DEVMODE display)
     {
         display.dmFields |= DEVMODE.DM_POSITION;
-        ChangeDisplaySettingsEx(display.dmDeviceName, ref display, IntPtr.Zero, CDS_UPDATEREGISTRY, IntPtr.Zero);
+        ChangeDisplaySettingsEx(display.dmDeviceName, ref display, IntPtr.Zero, CDS_UPDATEREGISTRY | CDS_NORESET, IntPtr.Zero);
         Console.WriteLine($"Applied settings to {display.dmDeviceName}.");
     }
 }
