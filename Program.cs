@@ -1,62 +1,39 @@
-﻿using System.Diagnostics;
+using System.Drawing;
 using System.Runtime.InteropServices;
+using System.Windows.Forms;
+using static NativeMethods;
 
-/* Top-left of main screen is always (0,0)
-
- * Laptop right: 
-      +----------------------------------+ +--------------------+
-      | Large Display                    | | Laptop Display     |
-      | 3840x2160                        | | 1920x1080          |
-      +----------------------------------+ +--------------------+
-                                           ^
-                                           |
-                Horizontal Offset = 3840 --+
-      
- * Laptop left:
-      +--------------------+ +----------------------------------+
-      | Laptop Display     | | Large Display                    |
-      | 1920x1080          | | 3840x2160                        |
-      +--------------------+ +----------------------------------+
-      ^
-      |
-      +-- Offset = -1920
-
- */
 class Program
 {
-    [DllImport("user32.dll", CharSet = CharSet.Ansi)]
-    public static extern bool EnumDisplayDevices(string lpDevice, uint iDevNum, ref DISPLAY_DEVICE lpDisplayDevice, uint dwFlags);
+    static Thread? overlayThread;
+    static Form? overlayAnchor;
 
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
-    public struct DISPLAY_DEVICE
+    static void Main()
     {
-        [MarshalAs(UnmanagedType.U4)]
-        public int cb;
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
-        public string DeviceName;
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
-        public string DeviceString;
-        [MarshalAs(UnmanagedType.U4)]
-        public DisplayDeviceStateFlags StateFlags;
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
-        public string DeviceID;
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
-        public string DeviceKey;
+        int extendResult = SetDisplayConfig(0, IntPtr.Zero, 0, IntPtr.Zero, SDC_TOPOLOGY_EXTEND | SDC_APPLY);
+        if (extendResult != 0)
+            Console.WriteLine($"SetDisplayConfig returned {extendResult}; continuing.");
+
+        var displays = GetConnectedDisplaysWithRetry(minCount: 2);
+        if (displays.Count < 2)
+        {
+            Console.WriteLine("At least two displays are required.");
+            return;
+        }
+
+        ShowScreenNumberOverlays(displays);
+
+        int[] order = ReadDisplayOrder(displays.Count);
+
+        CloseOverlays();
+
+        var ordered = order.Select(n => displays[n - 1]).ToList();
+        PositionDisplays(ordered);
     }
 
-    [Flags]
-    public enum DisplayDeviceStateFlags : int
-    {
-        Active = 0x1,
-        PrimaryDevice = 0x4,
-        MirroringDriver = 0x8,
-        VgaCompatible = 0x10,
-        Removable = 0x20,
-        ModesPruned = 0x8000000,
-        Remote = 0x4000000,
-        Disconnect = 0x2000000
-    }
-    private static List<DEVMODE> GetConnectedDisplays()
+    // --- Display enumeration ---
+
+    static List<DEVMODE> GetConnectedDisplays()
     {
         var displays = new List<DEVMODE>();
         var device = new DISPLAY_DEVICE { cb = Marshal.SizeOf(typeof(DISPLAY_DEVICE)) };
@@ -65,12 +42,10 @@ class Program
         {
             if (device.StateFlags.HasFlag(DisplayDeviceStateFlags.Active))
             {
-                var devMode = new DEVMODE();
-                devMode.dmSize = (ushort)Marshal.SizeOf(typeof(DEVMODE));
-
+                var devMode = new DEVMODE { dmSize = (ushort)Marshal.SizeOf(typeof(DEVMODE)) };
                 if (EnumDisplaySettings(device.DeviceName, ENUM_CURRENT_SETTINGS, ref devMode))
                 {
-                    devMode.dmDeviceName = device.DeviceName; // Use the unique DeviceName
+                    devMode.dmDeviceName = device.DeviceName;
                     displays.Add(devMode);
                     Console.WriteLine($"Active Display: {device.DeviceName} ({devMode.dmPelsWidth}x{devMode.dmPelsHeight})");
                 }
@@ -80,195 +55,211 @@ class Program
         return displays;
     }
 
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
-    public struct DEVMODE
-    {
-
-        public const int DM_POSITION = 0x20;
-        public const int DM_DISPLAYFLAGS = 0x200000;
-        public const int DM_PELSWIDTH = 0x80000;
-        public const int DM_PELSHEIGHT = 0x100000;
-
-        public const int CCHDEVICENAME = 32;
-        public const int CCHFORMNAME = 32;
-
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = CCHDEVICENAME)]
-        public string dmDeviceName;
-        public ushort dmSpecVersion;
-        public ushort dmDriverVersion;
-        public ushort dmSize;
-        public ushort dmDriverExtra;
-        public uint dmFields;
-
-        public int dmPositionX;
-        public int dmPositionY;
-        public uint dmDisplayOrientation;
-        public uint dmDisplayFixedOutput;
-
-        public short dmColor;
-        public short dmDuplex;
-        public short dmYResolution;
-        public short dmTTOption;
-        public short dmCollate;
-
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = CCHFORMNAME)]
-        public string dmFormName;
-        public ushort dmLogPixels;
-        public uint dmBitsPerPel;
-        public uint dmPelsWidth;
-        public uint dmPelsHeight;
-        public uint dmDisplayFlags;
-        public uint dmDisplayFrequency;
-        public uint dmICMMethod;
-        public uint dmICMIntent;
-        public uint dmMediaType;
-        public uint dmDitherType;
-        public uint dmReserved1;
-        public uint dmReserved2;
-        public uint dmPanningWidth;
-        public uint dmPanningHeight;
-    }
-
-
-    [DllImport("user32.dll")]
-    public static extern bool EnumDisplaySettings(string deviceName, int modeNum, ref DEVMODE devMode);
-
-    [DllImport("user32.dll")]
-    public static extern int ChangeDisplaySettingsEx(string deviceName, ref DEVMODE devMode, IntPtr hwnd, uint flags, IntPtr lParam);
-
-    // workaround: see https://stackoverflow.com/a/23044185
-    [DllImport("user32.dll")]
-    public static extern int ChangeDisplaySettingsEx(string lpszDeviceName, IntPtr lpDevMode, IntPtr hwnd, uint dwflags, IntPtr lParam);
-
-
-    const int ENUM_CURRENT_SETTINGS = -1;
-    const int CDS_UPDATEREGISTRY = 0x01;
-
-    static void Main(string[] args)
-    {
-        if (args.Length != 1)
-        {
-            Console.Write("Press l (laptop is on left) or r (laptop is on right): ");
-            string arg = Console.ReadKey().KeyChar.ToString();
-            Console.WriteLine();
-            args = [ "-" + arg];
-        }
-        if (args.Length != 1 || (args[0] != "-l" && args[0] != "-r"))
-        {
-            Console.WriteLine("Usage: DisplayApp -l | -r");
-            Console.WriteLine("-l: Laptop is on the left");
-            Console.WriteLine("-r: Laptop is on the right");
-            return;
-        }
-
-        bool laptopOnLeft = args[0] == "-l";
-        ExtendDisplays();
-        ConfigureDisplays(laptopOnLeft);
-    }
-    private static void ExtendDisplays()
-    {
-        try
-        {
-            // hacky way to extend the display. good enough for the current purpose.
-            Process process = new()
-            {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = "DisplaySwitch.exe",
-                    Arguments = "/extend",
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                }
-            };
-            process.Start();
-            process.WaitForExit();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Failed to extend the display: {ex.Message}");
-        }
-    }
-
-    private static List<DEVMODE> GetConnectedDisplaysWithRetry(int requiredCount, int maxAttempts = 10, int delayMs = 500)
+    static List<DEVMODE> GetConnectedDisplaysWithRetry(int minCount, int maxAttempts = 10, int delayMs = 500)
     {
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
             var displays = GetConnectedDisplays();
-            if (displays.Count >= requiredCount)
+            // After SetDisplayConfig, EnumDisplaySettings may briefly report stale, overlapping origins.
+            bool positionsDistinct = displays.Select(d => (d.dmPositionX, d.dmPositionY)).Distinct().Count() == displays.Count;
+            if (displays.Count >= minCount && positionsDistinct)
                 return displays;
 
             if (attempt < maxAttempts)
             {
-                Console.WriteLine($"Only {displays.Count} display(s) found, waiting for display enumeration... ({attempt}/{maxAttempts})");
+                Console.WriteLine($"Waiting for display arrangement to settle... ({attempt}/{maxAttempts})");
                 Thread.Sleep(delayMs);
             }
         }
         return GetConnectedDisplays();
     }
 
-    private static void ConfigureDisplays(bool laptopOnLeft)
+    // --- Overlay windows ---
+
+    static void ShowScreenNumberOverlays(List<DEVMODE> displays)
     {
-        // Get all connected displays and their resolutions
-        var displays = GetConnectedDisplaysWithRetry(requiredCount: 2);
-        if (displays.Count < 2)
+        var ready = new ManualResetEventSlim(false);
+
+        overlayThread = new Thread(() =>
         {
-            Console.WriteLine("At least two displays are required.");
-            return;
+            // PerMonitorV2 makes WinForms coordinates physical pixels — matches dmPositionX/dmPelsWidth.
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+
+            for (int i = 0; i < displays.Count; i++)
+            {
+                var d = displays[i];
+                int overlayW = 200, overlayH = 200;
+                int cx = d.dmPositionX + (int)d.dmPelsWidth / 2 - overlayW / 2;
+                int cy = d.dmPositionY + (int)d.dmPelsHeight / 2 - overlayH / 2;
+
+                var form = new Form
+                {
+                    FormBorderStyle = FormBorderStyle.None,
+                    StartPosition = FormStartPosition.Manual,
+                    TopMost = true,
+                    BackColor = Color.Black,
+                    Opacity = 0.8,
+                    Size = new Size(overlayW, overlayH),
+                    Location = new Point(cx, cy),
+                    ShowInTaskbar = false
+                };
+                var label = new Label
+                {
+                    Text = (i + 1).ToString(),
+                    Font = new Font("Arial", 80, FontStyle.Bold),
+                    ForeColor = Color.White,
+                    Dock = DockStyle.Fill,
+                    TextAlign = ContentAlignment.MiddleCenter
+                };
+                form.Controls.Add(label);
+                form.Show();
+
+                if (i == 0) overlayAnchor = form;
+            }
+
+            // Signal ready only after the message pump has drained initial paints.
+            EventHandler? onIdle = null;
+            onIdle = (s, e) => { Application.Idle -= onIdle!; ready.Set(); };
+            Application.Idle += onIdle;
+
+            Application.Run();
+        });
+
+        overlayThread.SetApartmentState(ApartmentState.STA);
+        overlayThread.IsBackground = true;
+        overlayThread.Start();
+
+        ready.Wait();
+    }
+
+    static void CloseOverlays()
+    {
+        overlayAnchor?.BeginInvoke(() => Application.Exit());
+        overlayThread?.Join(2000);
+    }
+
+    // --- User input ---
+
+    static int[] ReadDisplayOrder(int count)
+    {
+        while (true)
+        {
+            Console.Write($"Enter screen numbers from left to right (e.g. {string.Join(" ", Enumerable.Range(1, count))} or {string.Concat(Enumerable.Range(1, count))}): ");
+            string? input = Console.ReadLine()?.Trim();
+            if (string.IsNullOrEmpty(input)) continue;
+
+            int[] parsed;
+            if (input.Contains(' ') || input.Contains(','))
+            {
+                var tokens = input.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
+                if (!TryParseInts(tokens, out parsed)) { PrintInvalid(count); continue; }
+            }
+            else
+            {
+                parsed = input.Select(c => c - '0').ToArray();
+            }
+
+            if (parsed.Length != count || parsed.Any(n => n < 1 || n > count) || parsed.Distinct().Count() != count)
+            {
+                PrintInvalid(count);
+                continue;
+            }
+
+            return parsed;
         }
+    }
 
-        var largestDisplay = displays.OrderByDescending(d => d.dmPelsWidth * d.dmPelsHeight).First();
-        var laptopDisplay = displays
-            .OrderBy(d => d.dmPelsWidth * d.dmPelsHeight)
-            .First(d => d.dmDeviceName != largestDisplay.dmDeviceName);
-
-        // Position the displays
-        largestDisplay.dmPositionX = 0;
-        largestDisplay.dmPositionY = 0;
-        laptopDisplay.dmPositionY = (int)largestDisplay.dmPelsHeight - (int)laptopDisplay.dmPelsHeight; // Bottom-align
-
-        if (laptopOnLeft)
+    static bool TryParseInts(string[] tokens, out int[] result)
+    {
+        result = new int[tokens.Length];
+        for (int i = 0; i < tokens.Length; i++)
         {
-            laptopDisplay.dmPositionX = -(int)laptopDisplay.dmPelsWidth;
+            if (!int.TryParse(tokens[i], out result[i])) return false;
+        }
+        return true;
+    }
+
+    static void PrintInvalid(int count) =>
+        Console.WriteLine($"Invalid input. Enter exactly {count} unique numbers between 1 and {count}.");
+
+    // --- Display positioning ---
+
+    static void PositionDisplays(List<DEVMODE> ordered)
+    {
+        // Primary = center display when count is odd, otherwise largest by pixel area
+        int primaryIdx;
+        if (ordered.Count % 2 == 1)
+        {
+            primaryIdx = ordered.Count / 2;
         }
         else
         {
-            laptopDisplay.dmPositionX = (int)largestDisplay.dmPelsWidth;
+            primaryIdx = 0;
+            uint maxArea = 0;
+            for (int i = 0; i < ordered.Count; i++)
+            {
+                uint area = ordered[i].dmPelsWidth * ordered[i].dmPelsHeight;
+                if (area > maxArea) { maxArea = area; primaryIdx = i; }
+            }
         }
 
-        SetPrimaryDisplay(largestDisplay);
-        ApplyDisplaySettings(laptopDisplay);
-        ChangeDisplaySettingsEx(null, IntPtr.Zero, (IntPtr)null, 0, (IntPtr)null);
+        int primaryHeight = (int)ordered[primaryIdx].dmPelsHeight;
+
+        // Calculate x positions with primary anchored at 0
+        var xPositions = new int[ordered.Count];
+        xPositions[primaryIdx] = 0;
+
+        int x = 0;
+        for (int i = primaryIdx - 1; i >= 0; i--)
+        {
+            x -= (int)ordered[i].dmPelsWidth;
+            xPositions[i] = x;
+        }
+        x = (int)ordered[primaryIdx].dmPelsWidth;
+        for (int i = primaryIdx + 1; i < ordered.Count; i++)
+        {
+            xPositions[i] = x;
+            x += (int)ordered[i].dmPelsWidth;
+        }
+
+        // Apply: primary first (Windows requires primary at (0,0)), then all others
+        var primary = ordered[primaryIdx];
+        primary.dmPositionX = 0;
+        primary.dmPositionY = 0;
+        SetPrimaryDisplay(primary);
+
+        for (int i = 0; i < ordered.Count; i++)
+        {
+            if (i == primaryIdx) continue;
+            var d = ordered[i];
+            d.dmPositionX = xPositions[i];
+            d.dmPositionY = primaryHeight - (int)d.dmPelsHeight; // bottom-align to primary
+            ApplyDisplaySettings(d);
+        }
+
+        ChangeDisplaySettingsEx(null, IntPtr.Zero, IntPtr.Zero, 0, IntPtr.Zero);
         Console.WriteLine("Display configuration updated successfully.");
     }
-    private const int DISP_CHANGE_SUCCESSFUL = 0;
-    public const int CDS_SET_PRIMARY = 0x10;
-    public const int CDS_NORESET = 0x10000000;
-    private static void SetPrimaryDisplay(DEVMODE display)
-    {
-        // Set the display as the primary display
-        display.dmFields |= DEVMODE.DM_POSITION;
-        display.dmPositionX = 0;
-        display.dmPositionY = 0;
 
-        // Apply changes
-        int result = ChangeDisplaySettingsEx(display.dmDeviceName, ref display, IntPtr.Zero, CDS_UPDATEREGISTRY | CDS_SET_PRIMARY | CDS_NORESET, IntPtr.Zero);
+    static void SetPrimaryDisplay(DEVMODE display)
+    {
+        display.dmFields |= DEVMODE.DM_POSITION;
+        int result = ChangeDisplaySettingsEx(display.dmDeviceName, ref display, IntPtr.Zero,
+            CDS_UPDATEREGISTRY | CDS_SET_PRIMARY | CDS_NORESET, IntPtr.Zero);
 
         if (result == DISP_CHANGE_SUCCESSFUL)
-        {
-            Console.WriteLine($"Successfully set {display.dmDeviceName} as main display.");
-        }
+            Console.WriteLine($"Set {display.dmDeviceName} as primary.");
         else
-        {
-            Console.WriteLine($"Failed to set {display.dmDeviceName} settings. Error code: {result}");
-        }
+            Console.WriteLine($"Failed to set {display.dmDeviceName} as primary. Error: {result}");
     }
 
-
-    private static void ApplyDisplaySettings(DEVMODE display)
+    static void ApplyDisplaySettings(DEVMODE display)
     {
         display.dmFields |= DEVMODE.DM_POSITION;
-        ChangeDisplaySettingsEx(display.dmDeviceName, ref display, IntPtr.Zero, CDS_UPDATEREGISTRY | CDS_NORESET, IntPtr.Zero);
+        ChangeDisplaySettingsEx(display.dmDeviceName, ref display, IntPtr.Zero,
+            CDS_UPDATEREGISTRY | CDS_NORESET, IntPtr.Zero);
         Console.WriteLine($"Applied settings to {display.dmDeviceName}.");
     }
 }
