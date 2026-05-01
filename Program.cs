@@ -22,6 +22,7 @@ class Program
         }
 
         ShowScreenNumberOverlays(displays);
+        SetForegroundWindow(GetConsoleWindow());
 
         int[] order = ReadDisplayOrder(displays.Count);
 

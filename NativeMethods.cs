@@ -21,6 +21,12 @@ internal static class NativeMethods
     public static extern int SetDisplayConfig(uint numPathArrayElements, IntPtr pathArray,
         uint numModeInfoArrayElements, IntPtr modeInfoArray, uint flags);
 
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr GetConsoleWindow();
+
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+
     // --- Constants ---
 
     public const int ENUM_CURRENT_SETTINGS = -1;
