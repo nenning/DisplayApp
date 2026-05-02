@@ -10,6 +10,8 @@ class Program
 
     static void Main()
     {
+        Console.WriteLine("\x1b[1;93mGive me a star on GitHub if you like the app: \x1b]8;;https://github.com/nenning/DisplayApp\x1b\\https://github.com/nenning/DisplayApp\x1b]8;;\x1b\\\x1b[0m\n");
+
         int extendResult = SetDisplayConfig(0, IntPtr.Zero, 0, IntPtr.Zero, SDC_TOPOLOGY_EXTEND | SDC_APPLY);
         if (extendResult != 0)
             Console.WriteLine($"SetDisplayConfig returned {extendResult}; continuing.");

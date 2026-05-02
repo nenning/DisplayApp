@@ -45,6 +45,9 @@ Run `release.ps1` from the repo root. It auto-increments the patch version, vali
 .\release.ps1 -Version 1.2.0   # explicit version
 ```
 
+## Support
+If you find this app useful, consider giving it a ⭐ on [GitHub](https://github.com/nenning/DisplayApp) — it helps others discover it!
+
 ## Contributing
 Contributions are welcome! If you encounter issues or have feature requests, feel free to open an issue or submit a pull request.
 
