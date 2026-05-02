@@ -41,7 +41,7 @@ DisplayApp is a .NET application designed to simplify the process of managing di
 Run `release.ps1` from the repo root. It auto-increments the patch version, validates the build, commits, tags, and pushes — the GitHub Action then builds and publishes the release automatically.
 
 ```powershell
-.\release.ps1          # auto-increment patch (e.g. 1.1.0 → 1.1.1)
+.\release.ps1          # auto-increment minor (e.g. 1.1.2 → 1.2.0)
 .\release.ps1 -Version 1.2.0   # explicit version
 ```
 

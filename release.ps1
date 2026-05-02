@@ -34,8 +34,8 @@ if (-not $Version) {
         Write-Error "Invalid version format: $currentVersion. Expected Major.Minor.Patch"
         exit 1
     }
-    $patch = if ($versionParts.Length -ge 3) { [int]$versionParts[2] + 1 } else { 1 }
-    $Version = "$($versionParts[0]).$($versionParts[1]).$patch"
+    $minor = [int]$versionParts[1] + 1
+    $Version = "$($versionParts[0]).$minor.0"
     Write-Host "Current version: $currentVersion -> New version: $Version"
 }
 
