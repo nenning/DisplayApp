@@ -2,6 +2,22 @@ param (
     [string]$Version
 )
 
+# Locate git — add common install paths if not already on PATH
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    $candidates = @(
+        "$env:ProgramFiles\Git\cmd\git.exe",
+        "$env:ProgramFiles\Git\bin\git.exe",
+        "${env:ProgramFiles(x86)}\Git\cmd\git.exe"
+    )
+    $found = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if ($found) {
+        $env:PATH = "$([System.IO.Path]::GetDirectoryName($found));$env:PATH"
+    } else {
+        Write-Error "git not found. Install Git for Windows or add it to your PATH."
+        exit 1
+    }
+}
+
 # Ensure we're on the master branch
 $branch = git rev-parse --abbrev-ref HEAD
 if ($branch -ne "master") {
