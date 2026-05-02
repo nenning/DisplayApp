@@ -1,0 +1,39 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore dependencies
+        run: dotnet restore
+      - name: Publish
+        run: dotnet publish DisplayApp.csproj -c Release -r win-x64 --self-contained -o ./publish
+        shell: pwsh
+      - name: Create ZIP
+        run: Compress-Archive -Path ./publish/* -DestinationPath DisplayApp.zip
+        shell: pwsh
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: |
+            **Installation**: Download `DisplayApp.zip`, extract it, and run `DisplayApp.exe`.
+            Windows only. Self-contained — no .NET runtime installation required.
+          draft: false
+          prerelease: false
+          files: ./DisplayApp.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
